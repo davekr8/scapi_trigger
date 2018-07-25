@@ -1,0 +1,6 @@
+#sendp(Ether(dst='ff:ff:ff:ff:ff:ff') /IP(dst='255.255.255.255') /UDP(dport=udpP[2]) /Raw('\xff'*6 + mac*16),iface="eth0" , verbose=0)
+
+#alternatives
+
+#sendp(Ether(type=int('0842', 16), dst='ff:ff:ff:ff:ff:ff') / Raw('\xff'*6 + mac*16), iface="eth0")
+#sendp([Ether(dst=self.ETH_BROADCAST) / IP(dst='255.255.255.255') / UDP(sport=32767, dport=9)/ Raw(load=self.wol_payload)], iface=self.intf)
