@@ -10,19 +10,47 @@
 from scapy.all import *
 from threading import Thread, Event
 import time
-import re
+import re, sys
 import ConfigParser
+import smtplib
 
 ############## CONFIG 
 config = ConfigParser.RawConfigParser(allow_no_value=True)
+config.optionxform = str
 config.read('wol.conf')
 
 cfg={}
 for section in config.sections():
     cfg[section]={}
     for key,value in config.items(section):
-        cfg[section][key.replace('-',':').lower()]=value.replace('-',':').lower()
+        if section == "EMAIL":
+            cfg[section][key]=value
+        else:
+            cfg[section][key.replace('-',':').lower()]=value.replace('-',':').lower()
 ############## CONFIG 
+
+############## EMAIL
+def sendemail(subject, message):
+    
+    if "EMAIL" not in cfg.keys():
+        return
+    
+    msg = "From: %s <%s>\r\nTo: %s <%s>\r\nSubject: %s\r\n\r\n%s\r\n" % (
+                cfg["EMAIL"]["txName"],
+                cfg["EMAIL"]["txEmail"],
+                cfg["EMAIL"]["rxName"],
+                cfg["EMAIL"]["rxEmail"], subject , message )
+    
+    try:
+        smtpObj = smtplib.SMTP("smtp.gmail.com:587")
+        smtpObj.starttls()
+        smtpObj.login(cfg["EMAIL"]["user"], cfg["EMAIL"]["pass"])
+        problems = smtpObj.sendmail(cfg["EMAIL"]["txEmail"], cfg["EMAIL"]["rxEmail"], msg)
+        if problems: print problems
+        smtpObj.quit()  
+    except:
+        print "Error: unable to send email"
+############## EMAIL 
 
 def MAChex(mac):
     #check for lenght 12 ?
@@ -63,13 +91,18 @@ class Sniffer(Thread):
     deltaTime = 60
     
     def print_packet(self, packet):
-        #sniff for a predefined client->target relation in the config definition
+        #sniff for a predefined client->target relation in the config definition        
         if  ARP in packet and \
             packet[ARP].hwsrc in cfg['CLIENTS'].keys() and \
+            packet[ARP].psrc == cfg['CLIENTS'][packet[ARP].hwsrc] and \
             packet[ARP].pdst in cfg['TARGETS'].keys() :
             
+            hwsrc = packet[ARP].hwsrc
             psrc = packet[ARP].psrc
+            
+            hwdst = packet[ARP].hwdst
             pdst = packet[ARP].pdst
+            
             mdst=cfg['TARGETS'][pdst]
             
             if pdst not in self.pending.keys() or (time.time()-self.pending[pdst]) > self.deltaTime:
@@ -78,7 +111,15 @@ class Sniffer(Thread):
                 sendp(Ether(dst='ff:ff:ff:ff:ff:ff') / IP(dst='255.255.255.255') / UDP(dport=udpP[2]) / Raw('\xff'*6 + mac*16),iface="eth0" , verbose=0)
                 self.pending[pdst]=time.time()
                 
-                print "%s | ARP %s -> %s : Send WOL packet to %s [%s]" %(time.strftime('%x | %X'),psrc,pdst,pdst,mdst )
+                #send email
+                subject = "ARP %s -> %s " % (psrc,pdst)
+                sendemail(subject, time.strftime("%x | %X | ")+subject)
+                
+                #log output 
+                print "%s | ARP %s [%s] -> %s [%s] : Send WOL packet to %s [%s]" %(time.strftime('%x | %X'),psrc,hwsrc,pdst,hwdst,pdst,mdst )
+        
+        #debug
+        #if  ARP in packet: packet.show()
 
 print "[OK] Started WOL script."                
 
